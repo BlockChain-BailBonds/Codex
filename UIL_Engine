@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sigil Depth Translator + Decoder (5-Language Codex)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Inter', 'sans-serif'] },
+      colors: { 'gnc-bg': '#f1f5f9', 'gnc-dark': '#0f172a' }
+    }
+  }
+};
+</script>
+<style>
+.card { 
+  background:white; padding:1.5rem; border-radius:12px;
+  box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05);
+}
+.sigil-output{
+  font-family:monospace;font-size:1.25rem;font-weight:600;letter-spacing:0.06em;
+}
+.loading-spinner{
+  border:4px solid #f3f3f3;border-top:4px solid #0033A0;
+  border-radius:50%;width:24px;height:24px;animation:spin 1s linear infinite;margin-right:.5rem;
+}
+@keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+</style>
+</head>
+<body class="bg-gnc-bg min-h-screen p-4 flex flex-col items-center font-sans">
+
+<div class="w-full max-w-3xl">
+<header class="text-center mb-6">
+<h1 class="text-3xl font-extrabold text-gnc-dark mb-2">Sigil Depth Translator + Decoder</h1>
+<p class="text-gray-600 text-sm">Multilingual GNC Codex (English, Russian, Spanish, Hindi, Chinese)</p>
+</header>
+
+<!-- Encoder -->
+<div class="card mb-6">
+<h2 class="text-xl font-bold mb-3">Sigil Encoder</h2>
+<label class="block text-sm mb-2 text-gray-700">Enter a word:</label>
+<div class="flex space-x-2">
+  <input id="wordInput" placeholder="e.g., grit" class="flex-grow p-3 border rounded-lg text-gray-800 focus:ring-blue-500 focus:border-blue-500">
+  <select id="langSelect" class="p-3 border rounded-lg">
+    <option value="english">English</option>
+    <option value="russian">Russian</option>
+    <option value="spanish">Spanish</option>
+    <option value="hindi">Hindi</option>
+    <option value="chinese">Chinese (Concept)</option>
+  </select>
+  <button id="encodeBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out">Encode</button>
+</div>
+
+<div class="mt-4 space-y-3">
+  <div>
+    <label class="block text-sm font-semibold text-gray-700">Input → Sigil:</label>
+    <input id="sigilOutput" readonly class="w-full p-2 border rounded-lg bg-gray-50 sigil-output">
+  </div>
+</div>
+<!-- Encoder Status -->
+<div id="encoderStatus" class="hidden text-sm p-3 rounded-lg mt-3 transition duration-150"></div>
+</div>
+
+<!-- Decoder -->
+<div class="card mb-6">
+<h2 class="text-xl font-bold mb-3">Sigil Decoder</h2>
+<label class="block text-sm mb-2 text-gray-700">Enter Sigil String:</label>
+<input id="sigilInput" placeholder="e.g., <ΩΣτπΛ" class="w-full p-3 border rounded-lg text-gray-800 focus:ring-green-500 focus:border-green-500 mb-3">
+<label class="block text-sm mb-1 text-gray-700">Select Source Language (to find the character mappings):</label>
+<select id="sourceLang" class="w-full mb-3 p-3 border rounded-lg">
+  <option value="english">English</option>
+  <option value="russian">Russian</option>
+  <option value="spanish">Spanish</option>
+  <option value="hindi">Hindi</option>
+  <option value="chinese">Chinese (Concept)</option>
+</select>
+<button id="decodeBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md w-full transition duration-150 ease-in-out">Decode Sigil</button>
+
+<div class="mt-4">
+  <label class="block text-sm font-semibold text-gray-700">Decoded Word:</label>
+  <input id="decodedOutput" readonly class="w-full p-2 border rounded-lg bg-gray-50 text-gray-800 font-medium">
+</div>
+<!-- Decoder Status -->
+<div id="decoderStatus" class="hidden text-sm p-3 rounded-lg mt-3 transition duration-150"></div>
+</div>
+</div>
+
+<script>
+// === Multilingual Codex Map (full + partial Chinese) ===
+const codexMap = {
+english:{
+  "A":"<","B":">","C":"=","D":"@","E":"¬","F":"Γ","G":"Ω","H":"Δ","I":"Σ","J":"λ",
+  "K":"μ","L":"ν","M":"ξ","N":"ο","O":"π","P":"ρ","Q":"Σ","R":"Λ","S":"σ","T":"τ",
+  "U":"υ","V":"φ","W":"χ","X":"ψ","Y":"ω","Z":"Φ"
+},
+russian:{
+  "А":"<","Б":">","В":"=","Г":"@","Д":"¬","Е":"Γ","Ё":"Ω","Ж":"Δ","З":"Σ","И":"λ",
+  "Й":"μ","К":"μ","Л":"ν","М":"ξ","Н":"ο","О":"π","П":"ρ","Р":"Λ","С":"σ","Т":"τ",
+  "У":"υ","Ф":"φ","Х":"χ","Ц":"ψ","Ч":"ω","Ш":"Φ","Щ":"∑","Ъ":"∘","Ы":"√","Ь":"∞",
+  "Э":"∧","Ю":"∨","Я":"≠"
+},
+spanish:{
+  "A":"<","B":">","C":"=","D":"@","E":"¬","F":"Γ","G":"Ω","H":"Δ","I":"Σ","J":"λ",
+  "K":"μ","L":"ν","M":"ξ","N":"ο","Ñ":"π","O":"ρ","P":"Σ","Q":"Λ","R":"Λ","S":"σ",
+  "T":"τ","U":"υ","V":"φ","W":"χ","X":"ψ","Y":"ω","Z":"Φ","Á":"∑","É":"∘","Í":"√",
+  "Ó":"∞","Ú":"∧","Ü":"∨","CH":"⊕","LL":"⊗"
+},
+hindi:{
+  "अ":"<","आ":">","इ":"=","ई":"@","उ":"¬","ऊ":"Γ","ए":"Ω","ऐ":"Δ","ओ":"Σ","औ":"λ",
+  "क":"μ","ख":"ν","ग":"ξ","घ":"ο","च":"π","छ":"ρ","ज":"Λ","झ":"σ","ट":"τ","ठ":"φ",
+  "ड":"χ","ढ":"ψ","त":"ω","थ":"Φ","द":"∑","ध":"∘","न":"√","प":"∞","फ":"∧","ब":"∨",
+  "भ":"≠","म":"⊕","य":"⊗","र":"♠","ल":"♣","व":"♥","श":"♦","ष":"⚙","स":"⚡","ह":"✂"
+},
+chinese:{
+  "人":"<","天":">","地":"=","山":"@","水":"¬","火":"Γ","木":"Ω","金":"Δ","风":"Σ","雷":"λ",
+  "日":"μ","月":"ν","心":"ξ","力":"ο","气":"π","神":"ρ","光":"Λ","暗":"σ","龙":"τ","虎":"φ",
+  "云":"χ","雨":"ψ","星":"ω","道":"Φ"
+}
+};
+
+// === UI element references ===
+const wordInput        = document.getElementById('wordInput');
+const langSelect       = document.getElementById('langSelect');
+const encodeBtn        = document.getElementById('encodeBtn');
+const sigilOutput      = document.getElementById('sigilOutput');
+const sigilInput       = document.getElementById('sigilInput');
+const decodeBtn        = document.getElementById('decodeBtn');
+const sourceLang       = document.getElementById('sourceLang');
+const decodedOutput    = document.getElementById('decodedOutput');
+const encoderStatus    = document.getElementById('encoderStatus');
+const decoderStatus    = document.getElementById('decoderStatus'); // Added reference
+
+// === Utility Functions ===
+
+/**
+ * Displays a status or error message in a dedicated UI element.
+ * @param {HTMLElement} element The status element to target (e.g., encoderStatus).
+ * @param {string} message The message content.
+ * @param {boolean} isError If true, displays as an error (red); otherwise, displays as success (green).
+ */
+function setStatus(element, message, isError = false) {
+    if (!message) {
+        element.classList.add('hidden');
+        return;
+    }
+
+    element.classList.remove('hidden');
+    element.textContent = message;
+
+    element.classList.remove('bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800');
+
+    if (isError) {
+        element.classList.add('bg-red-100', 'text-red-800');
+    } else {
+        element.classList.add('bg-green-100', 'text-green-800');
+    }
+}
+
+/**
+ * Encodes a word into sigils using a specific character map.
+ */
+const encodeToSigils = (word, map) => {
+  let res = "";
+  // Simple character iteration (works for Latin, Cyrillic, and Devanagari)
+  for (const c of word) {
+    const upper = c.toUpperCase();
+    res += map[upper] || map[c] || c;
+  }
+  return res;
+};
+
+/**
+ * Inverts the map for decoding (Sigil -> Character).
+ */
+const invertMap = (obj) => {
+  const r = {};
+  for (const [k, v] of Object.entries(obj)) {
+    r[v] = k;
+  }
+  return r;
+};
+
+// === Event Handlers ===
+
+encodeBtn.onclick = () => {
+  setStatus(encoderStatus, null); // Clear previous status
+  sigilOutput.value = '';
+
+  const word = wordInput.value.trim();
+  if (!word) {
+    setStatus(encoderStatus, "Please enter a word to encode.", true);
+    return;
+  }
+  
+  const lang = langSelect.value;
+  const sig = encodeToSigils(word, codexMap[lang]);
+  
+  sigilOutput.value = sig;
+  setStatus(encoderStatus, `Encoding for ${lang.toUpperCase()} successful.`, false);
+};
+
+decodeBtn.onclick = () => {
+  setStatus(decoderStatus, null); // Clear previous status
+  decodedOutput.value = '';
+
+  const sigils = sigilInput.value.trim();
+  if (!sigils) {
+    setStatus(decoderStatus, "Please enter a sigil string to decode.", true);
+    return;
+  }
+  
+  const lang = sourceLang.value;
+  const rev = invertMap(codexMap[lang]);
+  let decoded = "";
+  
+  // Character iteration for decoding (Sigil -> Letter/Character)
+  for (const s of sigils) {
+    decoded += rev[s] || s; // If no mapping is found, keep the original sigil
+  }
+  
+  decodedOutput.value = decoded;
+  setStatus(decoderStatus, `Decoding for ${lang.toUpperCase()} successful. Unmapped sigils remain as input.`, false);
+};
+
+// Initialization: Clear inputs on load
+window.onload = () => {
+    wordInput.value = '';
+    sigilInput.value = '';
+    sigilOutput.value = '';
+    decodedOutput.value = '';
+};
+</script>
+</body>
+</html>
+

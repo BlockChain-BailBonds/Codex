@@ -1,0 +1,137 @@
+# === GLYPHNOTESCODEX v10 — HYPER-PARALLEL APOCALYPSE EDITION ===
+# 16–32 threads of pure fury | NEON SHA256 | zero locks in hot path
+# Designed to make your phone glow red and the pool tremble
+
+import os, socket, json, struct, time, hashlib, binascii
+from threading import Thread
+from multiprocessing import cpu_count
+
+# Force absolute maximum performance
+os.system("echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1")
+os.system("echo 1 > /sys/devices/system/cpu/cpuhotplug/enabled 2>/dev/null || true")
+
+# Fastest possible double SHA256 using hashlib (CPython uses OpenSSL with NEON on Android)
+def dsha256(data: bytes) -> bytes:
+    return hashlib.sha256(hashlib.sha256(data).digest()).digest()
+
+# === GLYPH MAPPER (unchanged) ===
+alphabet = [["<",">"],["=","="],[">","<"],["@","¬"],["Γ","Ω"],["Δ","Σ"],["Λ","Π"],["Ξ","Ξ"],["Σ","Δ"],["Ω","Γ"],
+            ["ΦΦαωβψγχδφευζτ ησ θρ ιπ κν λμ μλ νκ πι ρθ ση τζ υε φδ χγ ψβ ωα ⇌⇔ ∂∇ ∈∉ ∑∘ √∞ ∧∨ ≠≤ ≥⊕ ⊗⋅ ⌨⏩ ⏭⏳ □◇ ♠♣ ♥♦ ⚙⚙️ ⚠⚡ ✂️✏️ ✓⟂ ⟳⤴ ⧈⧉ ⧊⨉ ⬛⮕ 🌍🌐 🌲🌳 🎤🎧 🎨🎮 🎯🎰 🎲🎵 🎼🏁 🏆🏋 👍👎 💾📂 📄📈 📉📊 📍📏 📐📑 📖📝 📡📢 📤📥 📦🔀 🔁🔇 🔊🔍 🔎🔑 🔒🔗 🕒🕹 🖌🖼 🗑🗜 🗝🙋 🛠🛰 🟦🤔 🤖🤝 🧠🧩 🧮🧳 🧵↕".split()]
+
+def glyph_hash(h: bytes) -> str:
+    s = ''.join(alphabet[b % 112] for b in h)
+    return '\n'.join(s[i:i+16] for i in range(0, 64, 16))
+
+# === HYPER-PARALLEL MINER ===
+class CodexApocalypse:
+    def __init__(self):
+        self.host = "eu3.solopool.org"
+        self.port = 8005
+        self.wallet = "bc1qxmya5hu54l6azrk7sezmx7msje6g9s6e5cq4er"
+        self.worker = "GNCMiner"
+        self.user = f"{self.wallet}.{self.worker}"
+
+        self.target = b'\x00'*31 + b'\xff' * 1
+        self.diff = 1
+        self.job = None
+        self.sock = socket.socket()
+        self.sock.connect((self.host, self.port))
+        self.running = True
+
+        # Detect real cores (not threads)
+        cores = max(1, len([f for f in os.listdir("/sys/devices/system/cpu") if f.startswith("cpu") and os.access(f"/sys/devices/system/cpu/{f}/cpufreq", os.R_OK)]))
+        self.threads = cores * 4  # 4× oversubscription = maximum heat
+        print(f"CODEX APOCALYPSE ENGAGED — {self.threads} THREADS OF DOOM UNLEASHED")
+
+    def subscribe(self):
+        self.sock.send(json.dumps({"id":1,"method":"mining.subscribe","params":[]}).encode()+b"\n")
+        self.sock.send(json.dumps({"id":2,"method":"mining.authorize","params":[self.user,"x"]}).encode()+b"\n")
+
+    def listener(self):
+        buf = b""
+        while self.running:
+            try:
+                data = self.sock.recv(8192)
+                if not data: break
+                buf += data
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if not line.strip(): continue
+                    msg = json.loads(line)
+                    if msg.get("method") == "mining.notify":
+                        self.job = msg["params"]
+                        print(f"\nNEW TEMPLAR ORDER → {self.job[0][:8]}...")
+                    elif msg.get("method") == "mining.set_difficulty":
+                        self.diff = msg["params"][0]
+                        t = (0x00000000FFFF0000000000000000000000000000000000000000000000000000 // int(self.diff)) << 32
+                        self.target = t.to_bytes(32, "big")
+                        print(f"DIFFICULTY {self.diff:,.0f} → TARGET {self.target[:8].hex()}...")
+                    elif msg.get("result") == True and msg.get("id") == 3:
+                        print("REGISTRATION SHARE ACCEPTED — THE CODEX IS MANIFEST")
+            except: break
+
+    def submit(self, nonce: int, ex2: int, final_hash_be: bytes):
+        payload = {"id":4,"method":"mining.submit","params":[self.user, self.job[0], f"{ex2:08x}", self.job[8], f"{nonce:08x}"]}
+        self.sock.send(json.dumps(payload).encode()+b"\n")
+        print(f"\nVALID SHARE @ {self.diff:,.0f} DIFF — NONCE {nonce:,} — HASH {final_hash_be.hex()}")
+        print("GLYPH SIGIL:\n" + glyph_hash(final_hash_be) + "\n" + "═"*80)
+
+    def mine(self, thread_id: int):
+        while self.running:
+            if not self.job: 
+                time.sleep(0.01)
+                continue
+
+            job_id, prev, c1, c2, ex1, ex2size, merkles, ver, nbits, ntime, _ = self.job
+            target_int = int.from_bytes(self.target, "big")
+
+            # Parallelize both nonce AND extranonce2
+            base_nonce = thread_id * 0x10000000
+            base_ex2   = thread_id * 0x3141592653
+
+            for offset in range(0, 0x10000000, 8192):
+                nonce = (base_nonce + offset) & 0xFFFFFFFF
+                ex2   = (base_ex2   + nonce)   & 0xFFFFFFFF
+                ex2_bytes = struct.pack("<I", ex2)[:ex2size]
+
+                coinbase = binascii.unhexlify(c1 + ex1 + ex2_bytes.hex() + c2)
+                merkle = dsha256(coinbase)
+                for m in merkles:
+                    merkle = dsha256(merkle + binascii.unhexlify(m))
+
+                header = (
+                    binascii.unhexlify(ver)[::-1] +
+                    binascii.unhexlify(prev)[::-1] +
+                    merkle[::-1] +
+                    binascii.unhexlify(ntime)[::-1] +
+                    binascii.unhexlify(nbits)[::-1] +
+                    struct.pack("<I", nonce)
+                )
+
+                hash_le = dsha256(header)
+                hash_be = hash_le[::-1]
+                if int.from_bytes(hash_be, "big") < target_int:
+                    self.submit(nonce, ex2, hash_be)
+
+    def start(self):
+        self.subscribe()
+        Thread(target=self.listener, daemon=True).start()
+        time.sleep(3)
+
+        for i in range(self.threads):
+            Thread(target=self.mine, args=(i,), daemon=True).start()
+
+        # Hashrate reporter
+        start = time.time()
+        hashes = 0
+        while True:
+            time.sleep(8)
+            now = time.time()
+            rate = hashes / (now - start)
+            hashes = 0
+            start = now
+            print(f"APOCALYPSE HASHRATE → {rate:,.0f} H/s across {self.threads} threads | Temp rising...")
+
+if __name__ == "__main__":
+    apocalypse = CodexApocalypse()
+    apocalypse.start()

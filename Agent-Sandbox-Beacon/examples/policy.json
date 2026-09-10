@@ -1,0 +1,9 @@
+{
+  "symlink_policy": "ALLOW_INTERNAL_ONLY",
+  "geofences": [
+    {"id": "workspace", "root": ".", "recursive": true, "allow": ["filesystem.read"]},
+    {"id": "engineering", "root": "engineering", "recursive": true, "allow": ["filesystem.write", "shell.execute", "tool.test"]},
+    {"id": "research", "root": "research", "recursive": true, "allow": ["tool.search", "data.public"]},
+    {"id": "quarantine", "root": "quarantine", "recursive": true, "allow": ["tool.explain"], "deny": ["filesystem.write", "shell.execute", "network.connect"]}
+  ]
+}

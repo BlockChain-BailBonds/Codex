@@ -1,0 +1,96 @@
+name: Build CYDroid single-file flasher
+
+on:
+  push:
+    branches: [cydroid-singlefile-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct CYDroid source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat cydroid-singlefile-src.part00 cydroid-singlefile-src.part01 cydroid-singlefile-src.part02 cydroid-singlefile-src.part03 cydroid-singlefile-src.part04 > cydroid-singlefile-src.b64
+          base64 -d cydroid-singlefile-src.b64 > cydroid-singlefile-src.tar.gz
+          echo 'c1bd8977ea819e2a85f0444b6adace3135dc77b42d7bc8951d5db88a1861f8ce  cydroid-singlefile-src.tar.gz' | sha256sum -c -
+          mkdir -p cydroid-single-file
+          tar -xzf cydroid-singlefile-src.tar.gz -C cydroid-single-file
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ESP32 build tools
+        run: python -m pip install --disable-pip-version-check platformio==6.2.0 esptool==4.9.0
+
+      - name: Build CYDroid firmware
+        working-directory: cydroid-single-file
+        run: pio run -e cyd
+
+      - name: Merge complete classic ESP32 image
+        working-directory: cydroid-single-file
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          BOOT_APP0="$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
+          test -f "$BOOT_APP0"
+          python -m esptool --chip esp32 merge_bin -o build/cydroid-merged.bin \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 .pio/build/cyd/bootloader.bin \
+            0x8000 .pio/build/cyd/partitions.bin \
+            0xe000 "$BOOT_APP0" \
+            0x10000 .pio/build/cyd/firmware.bin
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bundle browser flasher
+        working-directory: cydroid-single-file
+        run: |
+          npm install --no-save esptool-js@0.6.1 esbuild
+          npx esbuild websrc/flasher-entry.js --bundle --format=iife --platform=browser --target=chrome89 --minify --outfile=build/flasher.bundle.js
+
+      - name: Generate one-file index.html
+        working-directory: cydroid-single-file
+        run: python scripts/build_single_file.py
+
+      - name: Run contract and native tests
+        working-directory: cydroid-single-file
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest -v test_host.test_single_file_flasher test_host.test_firmware_contract
+          g++ -std=c++17 -Wall -Wextra -Werror -Isrc test_host/test_game_models.cpp src/core/GameModels.cpp -o /tmp/cyd-game-models-test
+          /tmp/cyd-game-models-test
+          g++ -std=c++17 -Wall -Wextra -Werror -Isrc test_host/test_vs_protocol.cpp src/net/VsProtocol.cpp -o /tmp/cyd-vs-protocol-test
+          /tmp/cyd-vs-protocol-test
+
+      - name: Assert exact single-file artifact
+        working-directory: cydroid-single-file
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 1
+          ! grep -q 'manifest.json' dist/index.html
+          ! grep -q '<script src=' dist/index.html
+          ! grep -q 'fetch(' dist/index.html
+          grep -q 'cydroid-firmware' dist/index.html
+          sha256sum dist/index.html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cydroid-single-file-index
+          path: cydroid-single-file/dist/index.html
+          if-no-files-found: error
+          retention-days: 7

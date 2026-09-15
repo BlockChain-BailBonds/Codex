@@ -23,6 +23,8 @@ jobs:
           echo 'c1bd8977ea819e2a85f0444b6adace3135dc77b42d7bc8951d5db88a1861f8ce  cydroid-singlefile-src.tar.gz' | sha256sum -c -
           mkdir -p cydroid-single-file
           tar -xzf cydroid-singlefile-src.tar.gz -C cydroid-single-file
+          mkdir -p cydroid-single-file/.github/workflows
+          cp .github/workflows/cydroid-singlefile-build.yml cydroid-single-file/.github/workflows/build-single-file.yml
 
       - uses: actions/setup-python@v5
         with:

@@ -26,7 +26,7 @@ jobs:
           mkdir -p cydroid-single-file/.github/workflows
           cp .github/workflows/cydroid-singlefile-build.yml cydroid-single-file/.github/workflows/build-single-file.yml
 
-      - name: Rotate CYD touch 90 degrees clockwise
+      - name: Rotate CYD touch another 90 degrees clockwise
         shell: bash
         run: |
           set -euo pipefail
@@ -42,8 +42,11 @@ jobs:
             const int64_t den=rawMax-rawMin;
             return static_cast<int16_t>(den>0?num/den:0);
           }
-          inline Point mapRawClockwise90(int32_t rawX,int32_t rawY,int32_t rawXMin,int32_t rawXMax,int32_t rawYMin,int32_t rawYMax,int32_t screenW,int32_t screenH){
-            return {scaleRaw(rawX,rawXMin,rawXMax,screenW-1),scaleRaw(rawY,rawYMin,rawYMax,screenH-1)};
+          inline Point mapRawClockwise180(int32_t rawX,int32_t rawY,int32_t rawXMin,int32_t rawXMax,int32_t rawYMin,int32_t rawYMax,int32_t screenW,int32_t screenH){
+            return {
+              static_cast<int16_t>((screenW-1)-scaleRaw(rawY,rawYMin,rawYMax,screenW-1)),
+              scaleRaw(rawX,rawXMin,rawXMax,screenH-1)
+            };
           }
           }
           HPP
@@ -53,7 +56,7 @@ jobs:
           s=p.read_text()
           s=s.replace('#include "BoardConfig.h"\n#include <algorithm>', '#include "BoardConfig.h"\n#include "TouchTransform.h"')
           old='''  long mx=map(rawY,boardcfg::TOUCH_RAW_Y_MIN,boardcfg::TOUCH_RAW_Y_MAX,0,boardcfg::SCREEN_W-1);\n  long my=map(rawX,boardcfg::TOUCH_RAW_X_MIN,boardcfg::TOUCH_RAW_X_MAX,boardcfg::SCREEN_H-1,0);\n  x=(int16_t)std::max(0L,std::min((long)boardcfg::SCREEN_W-1,mx));\n  y=(int16_t)std::max(0L,std::min((long)boardcfg::SCREEN_H-1,my));'''
-          new='''  const auto point=cydtouch::mapRawClockwise90(\n    rawX,rawY,\n    boardcfg::TOUCH_RAW_X_MIN,boardcfg::TOUCH_RAW_X_MAX,\n    boardcfg::TOUCH_RAW_Y_MIN,boardcfg::TOUCH_RAW_Y_MAX,\n    boardcfg::SCREEN_W,boardcfg::SCREEN_H);\n  x=point.x;\n  y=point.y;'''
+          new='''  const auto point=cydtouch::mapRawClockwise180(\n    rawX,rawY,\n    boardcfg::TOUCH_RAW_X_MIN,boardcfg::TOUCH_RAW_X_MAX,\n    boardcfg::TOUCH_RAW_Y_MIN,boardcfg::TOUCH_RAW_Y_MAX,\n    boardcfg::SCREEN_W,boardcfg::SCREEN_H);\n  x=point.x;\n  y=point.y;'''
           if old not in s: raise SystemExit('old touch mapping not found')
           p.write_text(s.replace(old,new))
           PY
@@ -62,12 +65,12 @@ jobs:
           #include "board/TouchTransform.h"
           int main(){
             constexpr int xmin=220,xmax=3850,ymin=220,ymax=3850,w=320,h=240;
-            auto tl=cydtouch::mapRawClockwise90(xmin,ymin,xmin,xmax,ymin,ymax,w,h);
-            auto tr=cydtouch::mapRawClockwise90(xmax,ymin,xmin,xmax,ymin,ymax,w,h);
-            auto bl=cydtouch::mapRawClockwise90(xmin,ymax,xmin,xmax,ymin,ymax,w,h);
-            auto br=cydtouch::mapRawClockwise90(xmax,ymax,xmin,xmax,ymin,ymax,w,h);
-            assert(tl.x==0&&tl.y==0); assert(tr.x==w-1&&tr.y==0);
-            assert(bl.x==0&&bl.y==h-1); assert(br.x==w-1&&br.y==h-1);
+            auto tl=cydtouch::mapRawClockwise180(xmin,ymin,xmin,xmax,ymin,ymax,w,h);
+            auto tr=cydtouch::mapRawClockwise180(xmax,ymin,xmin,xmax,ymin,ymax,w,h);
+            auto bl=cydtouch::mapRawClockwise180(xmin,ymax,xmin,xmax,ymin,ymax,w,h);
+            auto br=cydtouch::mapRawClockwise180(xmax,ymax,xmin,xmax,ymin,ymax,w,h);
+            assert(tl.x==w-1&&tl.y==0); assert(tr.x==w-1&&tr.y==h-1);
+            assert(bl.x==0&&bl.y==0); assert(br.x==0&&br.y==h-1);
             return 0;
           }
           CPP
@@ -140,7 +143,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: cydroid-single-file-index-touch90
+          name: cydroid-single-file-index-touch180
           path: cydroid-single-file/dist/index.html
           if-no-files-found: error
           retention-days: 7
